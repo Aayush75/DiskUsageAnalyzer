@@ -1,0 +1,11 @@
+.tools/
+.testdata/
+artifacts/
+**/bin/
+**/obj/
+TestResults/
+*.user
+.vs/
+*.db
+*.db-shm
+*.db-wal

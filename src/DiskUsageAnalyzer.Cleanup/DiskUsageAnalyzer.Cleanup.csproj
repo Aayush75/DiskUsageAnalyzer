@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../DiskUsageAnalyzer.Core/DiskUsageAnalyzer.Core.csproj" />
+    <ProjectReference Include="../DiskUsageAnalyzer.Storage/DiskUsageAnalyzer.Storage.csproj" />
+    <ProjectReference Include="../DiskUsageAnalyzer.Windows/DiskUsageAnalyzer.Windows.csproj" />
+  </ItemGroup>
+</Project>
