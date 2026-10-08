@@ -1,0 +1,35 @@
+name: Windows safety and desktop checks
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          global-json-file: global.json
+      - name: Build, safety tests, and actual WPF journeys
+        shell: pwsh
+        run: ./eng/Build.ps1 -UiTests -Coverage
+      - name: Publish self-contained app
+        shell: pwsh
+        run: ./eng/Package.ps1
+      - name: Verify the exact packaged executable
+        shell: pwsh
+        run: dotnet run --project tests/DiskUsageAnalyzer.UITests -c Release --no-build --no-restore -- artifacts/ui --packaged artifacts/publish/0.1.0/win-x64/DiskUsageAnalyzer.App.exe
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: windows-validation
+          path: |
+            artifacts/test-results
+            artifacts/ui/*.png
+            artifacts/ui/results.txt
+            artifacts/releases

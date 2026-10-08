@@ -1,3 +1,5 @@
 * text=auto eol=lf
 *.png binary
 *.ico binary
+# Preserve upstream redistribution notices verbatim, including their whitespace.
+third-party/*.txt -whitespace

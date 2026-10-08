@@ -1,0 +1,6 @@
+{
+  "wpfVersion": "10.0.12",
+  "wpfNoticesSource": "https://raw.githubusercontent.com/dotnet/wpf/v10.0.12/THIRD-PARTY-NOTICES.TXT",
+  "sqlitePclVersion": "3.0.5",
+  "sqlitePclLicenseSource": "https://raw.githubusercontent.com/ericsink/SQLitePCL.raw/ed046114d5a30534e13294d94d78eb73de896ad4/LICENSE.TXT"
+}
