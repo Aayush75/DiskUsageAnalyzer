@@ -58,6 +58,18 @@ public sealed class SafetyTests
         var gate = new ConsentGate(); var manifest = new CleanupManifest([Entry()], DeleteMode.Recovery); var consent = gate.Confirm(manifest, true, true); int successes = 0;
         Parallel.For(0, 100, _ => { if (gate.Consume(manifest, consent)) Interlocked.Increment(ref successes); }); Assert.Equal(1, successes);
     }
+    [Fact] public void StopBetweenItemsReportsOutcomesAndNeverStartsRemainingMutation()
+    {
+        var gate = new ConsentGate(); var spy = new Spy(); var manifest = new CleanupManifest([Entry(), Entry("b.txt")], DeleteMode.Recovery);
+        using var stop = new CancellationTokenSource(); List<CleanupOutcome> reported = [];
+        var progress = new ImmediateProgress(outcome => { reported.Add(outcome); stop.Cancel(); });
+        var outcomes = new CleanupExecutor(gate, spy).Execute(manifest, gate.Confirm(manifest, true, true), progress, stop.Token);
+        Assert.Equal(1, spy.Calls); Assert.Equal(outcomes, reported); Assert.Equal(OutcomeStatus.Recovered, outcomes[0].Status); Assert.Equal(OutcomeStatus.Skipped, outcomes[1].Status);
+    }
+    private sealed class ImmediateProgress(Action<CleanupOutcome> action) : IProgress<CleanupOutcome>
+    {
+        public void Report(CleanupOutcome value) => action(value);
+    }
     [Fact] public void RandomConsentSequencesNeverMutateWithoutMatchingPositiveApproval()
     {
         var rng = new Random(34792);

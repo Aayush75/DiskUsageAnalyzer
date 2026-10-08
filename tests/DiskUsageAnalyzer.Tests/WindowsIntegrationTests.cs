@@ -69,6 +69,15 @@ public sealed class WindowsIntegrationTests
         using var f = new Fixture(); var path = f.Write("sentinel.txt"); f.Store.Journal("Permanent delete", f.Entry(path), null);
         using var reopened = new ScanStore(f.Store.DatabasePath); Assert.Equal("Pending", Assert.Single(reopened.History()).Status); Assert.True(File.Exists(path));
     }
+    [Fact] public void NewerDatabaseIsRejectedWithoutChangingItsContents()
+    {
+        using var f = new Fixture(); string path = Path.Combine(f.Root, "future.db");
+        using (var connection = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={path};Pooling=False"))
+        {
+            connection.Open(); using var command = connection.CreateCommand(); command.CommandText = "PRAGMA user_version=999; CREATE TABLE future(value TEXT); INSERT INTO future VALUES('preserved');"; command.ExecuteNonQuery();
+        }
+        byte[] before = File.ReadAllBytes(path); Assert.Throws<InvalidDataException>(() => new ScanStore(path)); Assert.Equal(before, File.ReadAllBytes(path));
+    }
     [Fact] public void DuplicateDeletionKeepsVerifiedOtherCopy()
     {
         using var f = new Fixture(); var keeper = f.Write("keeper.txt", "identical"); var remove = f.Write("remove.txt", "identical");
@@ -115,6 +124,25 @@ public sealed class WindowsIntegrationTests
         Assert.True(summary.Complete); Assert.Equal(3, summary.Files); Assert.Equal(summary.Bytes, f.Store.Get(1)!.Bytes);
         Assert.Equal(new string('a', 200), File.ReadAllText(a)); Assert.Equal(new string('b', 300), File.ReadAllText(b));
         Assert.Equal(200, f.Store.Children(1).Single(x => x.Name == "nested").Bytes);
+    }
+    [Fact] public void AnalysisPersistsExplainableFindingsWithoutChangingSourceFiles()
+    {
+        using var f = new Fixture(); f.Write("project/sample.csproj", "<Project />");
+        string output = f.Write("project/bin/output.dll", "recognized build output");
+        string unrelated = f.Write("ordinary/bin/important.txt", "unrelated personal content");
+        string readonlyOutput = f.Write("project/obj/protected.txt", "readonly build content"); File.SetAttributes(readonlyOutput, FileAttributes.ReadOnly);
+        new DiskScanner(f.Store, f.Metadata).Scan(f.Root);
+        var findings = new FindingAnalyzer(f.Store).Analyze();
+        var build = Assert.Single(findings); Assert.Equal("dotnet", build.Rule); Assert.Equal(1, build.Count); Assert.Equal(Risk.Caution, build.Risk);
+        var row = Assert.Single(f.Store.RuleFiles("dotnet")); Assert.Equal(PathPolicy.Canonical(output), row.Path); Assert.Contains("inspect", row.Explanation);
+        Assert.Equal("recognized build output", File.ReadAllText(output)); Assert.Equal("unrelated personal content", File.ReadAllText(unrelated)); Assert.True(File.Exists(readonlyOutput));
+    }
+    [Fact] public void CanceledAnalysisDoesNotAssignFindingsOrMutateContent()
+    {
+        using var f = new Fixture(); f.Write("project/sample.csproj", "<Project />"); string output = f.Write("project/bin/output.dll", "keep content");
+        new DiskScanner(f.Store, f.Metadata).Scan(f.Root);
+        Assert.Empty(new FindingAnalyzer(f.Store).Analyze(new CancellationToken(true)));
+        Assert.All(f.Store.Largest(), row => Assert.Null(row.Rule)); Assert.Equal("keep content", File.ReadAllText(output));
     }
     [Fact] public void PagingAndLiteralFilterDoNotBroadenResults()
     {

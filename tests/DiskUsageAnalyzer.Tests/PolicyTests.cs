@@ -38,11 +38,21 @@ public sealed class PolicyTests
         try { Environment.SetEnvironmentVariable("OneDriveCommercial", "C:\\synchronized"); Assert.NotNull(PathPolicy.ProtectedReason("C:\\synchronized\\file")); }
         finally { Environment.SetEnvironmentVariable("OneDriveCommercial", previous); }
     }
-    [Fact] public void BackendFailureIsAnOutcomeAndOtherFilesRemainExplicitlyScoped()
+    [Theory] [InlineData("io")] [InlineData("unauthorized")] [InlineData("invalid")]
+    public void BackendFailureIsAnOutcomeAndOtherFilesRemainExplicitlyScoped(string failure)
     {
         var gate = new ConsentGate(); var manifest = new CleanupManifest([Entry()], DeleteMode.Permanent);
-        var outcomes = new CleanupExecutor(gate, new Failing()).Execute(manifest, gate.Confirm(manifest, true, true));
+        var outcomes = new CleanupExecutor(gate, new Failing(failure)).Execute(manifest, gate.Confirm(manifest, true, true));
         Assert.Equal(OutcomeStatus.Failed, Assert.Single(outcomes).Status);
     }
-    private sealed class Failing : ICleanupBackend { public CleanupOutcome Execute(ManifestEntry entry, DeleteMode mode) => throw new IOException("Fixture failure"); }
+    [Fact] public void UnexpectedBackendFailureStopsTheBatch()
+    {
+        var gate = new ConsentGate(); var manifest = new CleanupManifest([Entry()], DeleteMode.Permanent);
+        Assert.Throws<ArgumentException>(() => new CleanupExecutor(gate, new Failing("argument")).Execute(manifest, gate.Confirm(manifest, true, true)));
+    }
+    private sealed class Failing(string failure) : ICleanupBackend
+    {
+        public CleanupOutcome Execute(ManifestEntry entry, DeleteMode mode) => throw failure switch
+        { "io" => new IOException("Fixture failure"), "unauthorized" => new UnauthorizedAccessException("Fixture failure"), "invalid" => new InvalidOperationException("Fixture failure"), _ => new ArgumentException("Fixture failure") };
+    }
 }

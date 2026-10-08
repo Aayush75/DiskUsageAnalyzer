@@ -164,7 +164,16 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         try
         {
             Status = "Reading file metadata. No cleanup is running.";
-            var progress = new Progress<ScanProgress>(p => { Total = ByteSize.Format(p.Bytes); FileCount = $"{p.Files:N0}"; Coverage = p.Finished ? p.Cancelled ? "Partial scan" : $"{p.Skipped:N0} skipped" : "Scanning…"; Status = p.Finished ? "Analyzing the scan locally…" : $"{p.Folders:N0} folders · {p.Skipped:N0} skipped · {p.Current}"; });
+            var liveMap = Stopwatch.StartNew();
+            var progress = new Progress<ScanProgress>(p =>
+            {
+                Total = ByteSize.Format(p.Bytes); FileCount = $"{p.Files:N0}"; Coverage = p.Finished ? p.Cancelled ? "Partial scan" : $"{p.Skipped:N0} skipped" : "Scanning…";
+                Status = p.Finished ? "Analyzing the scan locally…" : $"{p.Folders:N0} folders · {p.Skipped:N0} skipped · {p.Current}";
+                if (!p.Finished && Section == 0 && liveMap.ElapsedMilliseconds >= 750 && p.Files > 0)
+                {
+                    MapItems.Clear(); foreach (var f in _store.Largest(limit: 20)) MapItems.Add(f); liveMap.Restart();
+                }
+            });
             _summary = await Task.Run(() => new DiskScanner(_store, _metadata).Scan(ScanPath, progress, _cancellation.Token));
             Scope = _summary.Root; Total = ByteSize.Format(_summary.Bytes); FileCount = $"{_summary.Files:N0}"; Coverage = _summary.Complete ? $"{_summary.Skipped:N0} skipped" : "Partial scan";
             if (!_cancellation.IsCancellationRequested)
@@ -221,11 +230,14 @@ public sealed class MainViewModel : ObservableObject, IDisposable
                 return list;
             });
             int skipped = 0;
+            var queuedPaths = Review.Select(f => f.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var keeperPaths = _keepers.Values.Select(k => k.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
             foreach (var file in candidates)
             {
                 if (Review.Count >= 10000) break;
-                if (file.Exclusion is not null || file.Identity is null || Review.Any(f => f.Path == file.Path) || _keepers.Values.Any(k => k.Path == file.Path)) { skipped++; continue; }
+                if (file.Exclusion is not null || file.Identity is null || queuedPaths.Contains(file.Path) || keeperPaths.Contains(file.Path)) { skipped++; continue; }
                 Review.Add(file);
+                queuedPaths.Add(file.Path);
             }
             Status = $"{Review.Count:N0} exact files in review; {skipped:N0} unsupported or repeated entries skipped. Limit: 10,000 per batch. Nothing deleted.";
             ReviewChanged();
@@ -264,7 +276,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             var progress = new Progress<string>(p => Status = "Comparing contents: " + p);
             var groups = await Task.Run(() => new DuplicateFinder(_store, _metadata).Find(progress, _cancellation.Token));
             foreach (var group in groups) DuplicateGroups.Add(group);
-            Status = $"{groups.Count:N0} verified groups. Nothing selected for deletion. Limits: 500 groups, 2,000 candidates per size, 5,000 sizes.";
+            Status = $"{groups.Count:N0} verified groups. Nothing selected for deletion. Limits: 500 groups, 10,000 result files, 2,000 candidates per size, 5,000 sizes.";
         }
         catch (OperationCanceledException) { Status = "Duplicate analysis canceled. No files changed."; }
         catch (Exception ex) when (ex is IOException or Microsoft.Data.Sqlite.SqliteException) { Status = "Duplicate analysis could not finish: " + ex.Message; }
@@ -309,7 +321,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         if (dialog.ShowDialog() != true) return;
         try
         {
-            Busy = true;
+            Busy = true; _cancellation = new();
             await Task.Run(() =>
             {
                 // Never overwrite a user file, including a scanned file, through report export.
@@ -318,6 +330,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
                 long after = 0;
                 while (true)
                 {
+                    _cancellation.Token.ThrowIfCancellationRequested();
                     var page = _store.FilesAfter(after); if (page.Count == 0) break;
                     foreach (var f in page) writer.WriteLine($"{Csv(f.Path)},{f.Bytes},{f.Allocated},{Csv(f.Exclusion ?? "Review carefully")},{Csv(f.Rule ?? "")}");
                     after = page[^1].Id;
@@ -325,8 +338,9 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             });
             Status = "Report exported locally. It contains private file paths; review before sharing.";
         }
+        catch (OperationCanceledException) { Status = "Export stopped. The partial report is retained; choose a new filename to export again."; }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or Microsoft.Data.Sqlite.SqliteException) { Status = "Export failed; choose a new unused filename: " + ex.Message; }
-        finally { Busy = false; }
+        finally { Busy = false; _cancellation?.Dispose(); _cancellation = null; }
     }
     private static string Csv(string s) => "\"" + (s.Length > 0 && "=+-@".Contains(s[0]) ? "'" : "") + s.Replace("\"", "\"\"") + "\"";
     public void RequestStop() => _cancellation?.Cancel();

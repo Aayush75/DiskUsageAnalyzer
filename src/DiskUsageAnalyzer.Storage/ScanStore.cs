@@ -15,9 +15,9 @@ public sealed class ScanStore : IDisposable
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
         _db = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = path, Pooling = false }.ToString());
         _db.Open();
-        Execute("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA cache_size=-8192; PRAGMA busy_timeout=5000;");
         var version = Convert.ToInt64(Scalar("PRAGMA user_version;"));
         if (version > 1) { _db.Dispose(); throw new InvalidDataException("This database needs a newer application. It has not been modified."); }
+        Execute("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA cache_size=-8192; PRAGMA busy_timeout=5000;");
         Execute("""
             CREATE TABLE IF NOT EXISTS files(id INTEGER PRIMARY KEY,parent INTEGER,path TEXT NOT NULL,name TEXT NOT NULL,dir INTEGER,bytes INTEGER,allocated INTEGER,identity TEXT,exclusion TEXT,rule TEXT,explanation TEXT,risk INTEGER,count INTEGER DEFAULT 0);
             CREATE INDEX IF NOT EXISTS ix_parent ON files(parent,bytes DESC);

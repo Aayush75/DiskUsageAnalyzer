@@ -20,6 +20,11 @@ internal static class Program
     {
         try
         {
+            if (args.Length == 3 && args[0] == "--installer")
+            {
+                InstallerSmoke.Run(Path.GetFullPath(args[1]), Path.GetFullPath(args[2]), SmokePackaged);
+                return 0;
+            }
             string artifacts = Path.GetFullPath(args.FirstOrDefault() ?? "artifacts/ui"); Directory.CreateDirectory(artifacts);
             string fixture = Path.Combine(artifacts, "fixture-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(fixture);
             File.WriteAllText(Path.Combine(fixture, ".fixture-owner"), "Disposable DiskUsageAnalyzer UI test fixture.");
@@ -40,8 +45,10 @@ internal static class Program
             Run(vm.ScanCommand.ExecuteAsync(null));
             Check(vm.FileCount != "—" && vm.Coverage.Contains("skipped"), "Real WPF scan completed: " + vm.Status);
             Check(File.ReadAllText(sentinel) == "THIS FILE MUST SURVIVE CANCEL", "Scan preserved sentinel");
+            string actualScanPath = vm.ScanPath;
+            vm.ScanPath = @"C:\Demo\Storage"; // Public screenshots use a synthetic display path, not a username.
             Capture(window, Path.Combine(artifacts, "overview-dark.png"));
-            vm.LightTheme = true; Pump(); Capture(window, Path.Combine(artifacts, "overview-light.png")); vm.LightTheme = false;
+            vm.LightTheme = true; Pump(); Capture(window, Path.Combine(artifacts, "overview-light.png")); vm.LightTheme = false; vm.ScanPath = actualScanPath;
             vm.LargestCommand.Execute(null); Pump(); Check(vm.Rows.Count >= 5, "Largest file view has real results");
             vm.Selected = vm.Rows.Single(f => f.Path == sentinel); Run(vm.AddSelectedCommand.ExecuteAsync(null));
             Check(vm.Review.Count == 1, "Selecting file only queues review"); Check(File.Exists(sentinel), "Queueing preserved sentinel");
@@ -57,6 +64,8 @@ internal static class Program
                 var cancel = Find<Button>(modal, "CancelDeleteButton")!;
                 Check(cancel.IsDefault && cancel.IsCancel, "Cancel is the default and Escape action");
                 Check(!Find<Button>(modal, "ConfirmDeleteButton")!.IsEnabled, "Positive button disabled before acknowledgment");
+                var fullPath = modal.FindName("PreviewPath") as TextBox;
+                Check(fullPath is { IsReadOnly: true } && Path.IsPathFullyQualified(fullPath.Text) && File.Exists(fullPath.Text), "Confirmation exposes the selected full existing path read-only");
                 Capture(modal, Path.Combine(artifacts, "confirmation.png")); Invoke(cancel);
             };
             cancelTimer.Start(); Run(vm.DeleteCommand.ExecuteAsync(null));
@@ -95,12 +104,44 @@ internal static class Program
             window.Width = 1024; window.Height = 768; Pump(); Capture(window, Path.Combine(artifacts, "compact.png"));
             Check(window.ActualWidth >= 1024, "Compact window remains usable");
             window.Close(); app.Shutdown();
+            if (args.Length > 2 && args[1] == "--packaged") SmokePackaged(Path.GetFullPath(args[2]), fixture, artifacts);
             File.WriteAllText(Path.Combine(artifacts, "results.txt"), $"PASS: {_checks} actual WPF workflow assertions.\nFixture: {fixture}\n");
             Console.WriteLine($"PASS: {_checks} WPF workflow assertions; screenshots in {artifacts}"); return 0;
         }
         catch (Exception ex) { Console.Error.WriteLine(ex); return 1; }
     }
     private static void Check(bool result, string message) { if (!result) throw new InvalidOperationException(message); _checks++; Console.WriteLine("PASS " + message); }
+    private static void SmokePackaged(string executable, string fixture, string artifacts)
+    {
+        var start = new ProcessStartInfo(executable) { UseShellExecute = false, WindowStyle = ProcessWindowStyle.Hidden };
+        start.Environment["DOTNET_ROOT"] = Path.Combine(artifacts, "no-global-runtime");
+        start.Environment["DOTNET_ROOT_X64"] = Path.Combine(artifacts, "no-global-runtime");
+        start.Environment["DOTNET_MULTILEVEL_LOOKUP"] = "0";
+        start.ArgumentList.Add("--data-dir"); start.ArgumentList.Add(Path.Combine(artifacts, "packaged-data-" + Guid.NewGuid().ToString("N")));
+        start.ArgumentList.Add("--scan"); start.ArgumentList.Add(fixture);
+        using var process = Process.Start(start) ?? throw new IOException("Packaged application did not start.");
+        var timeout = Stopwatch.StartNew();
+        while (process.MainWindowHandle == IntPtr.Zero && !process.HasExited && timeout.Elapsed < TimeSpan.FromSeconds(15)) { Thread.Sleep(100); process.Refresh(); }
+        Check(!process.HasExited && process.MainWindowHandle != IntPtr.Zero, "Self-contained packaged application starts without global .NET");
+        var root = AutomationElement.FromHandle(process.MainWindowHandle);
+        var scan = root.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.AutomationIdProperty, "ScanButton"));
+        Check(scan is not null, "Packaged binary exposes actual accessible scan control");
+        ((InvokePattern)scan!.GetCurrentPattern(InvokePattern.Pattern)).Invoke();
+        bool complete = false; timeout.Restart();
+        while (!complete && !process.HasExited && timeout.Elapsed < TimeSpan.FromSeconds(30))
+        {
+            Thread.Sleep(100);
+            var status = root.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.AutomationIdProperty, "StatusText"));
+            complete = status?.Current.Name.Contains("Scan complete", StringComparison.Ordinal) == true;
+        }
+        Check(complete, "Packaged production startup and scan workflow completed");
+        Check(File.Exists(Path.Combine(fixture, "archive.zip")), "Packaged scan preserved unapproved content");
+        process.Refresh();
+        string directory = Path.GetDirectoryName(executable)!;
+        Check(process.Modules.Cast<ProcessModule>().Any(m => m.ModuleName.Equals("coreclr.dll", StringComparison.OrdinalIgnoreCase) && m.FileName.StartsWith(directory, StringComparison.OrdinalIgnoreCase)), "Packaged process uses its bundled runtime");
+        ((WindowPattern)root.GetCurrentPattern(WindowPattern.Pattern)).Close();
+        Check(process.WaitForExit(10000), "Packaged application closes cleanly");
+    }
     private static void Run(Task task)
     {
         var watch = Stopwatch.StartNew();

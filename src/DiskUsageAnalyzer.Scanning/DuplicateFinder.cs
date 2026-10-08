@@ -11,6 +11,7 @@ public sealed class DuplicateFinder(ScanStore store, IFileMetadata metadata)
     public IReadOnlyList<DuplicateGroup> Find(IProgress<string>? progress = null, CancellationToken cancellation = default)
     {
         List<DuplicateGroup> result = [];
+        int retainedFiles = 0;
         var throttle = Stopwatch.StartNew();
         foreach (var size in store.DuplicateSizes())
         {
@@ -37,9 +38,9 @@ public sealed class DuplicateFinder(ScanStore store, IFileMetadata metadata)
             }
             foreach (var (hash, candidates) in hashes.Where(h => h.Value.Count > 1))
             {
-                var exact = candidates.Where(f => f == candidates[0] || EqualContent(candidates[0].Path, f.Path, cancellation)).ToImmutableArray();
-                if (exact.Length > 1) result.Add(new(hash, exact));
-                if (result.Count >= 500) return result;
+                var exact = candidates.Where(f => f == candidates[0] || EqualContent(candidates[0].Path, f.Path, cancellation)).Take(10000 - retainedFiles).ToImmutableArray();
+                if (exact.Length > 1) { result.Add(new(hash, exact)); retainedFiles += exact.Length; }
+                if (result.Count >= 500 || retainedFiles >= 9999) return result;
             }
         }
         return result;
