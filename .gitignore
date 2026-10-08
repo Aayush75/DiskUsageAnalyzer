@@ -9,3 +9,4 @@ TestResults/
 *.db
 *.db-shm
 *.db-wal
+/IMPLEMENTATION_PLAN.md
