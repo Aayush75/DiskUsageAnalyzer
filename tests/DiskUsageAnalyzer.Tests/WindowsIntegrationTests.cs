@@ -78,6 +78,17 @@ public sealed class WindowsIntegrationTests
         }
         byte[] before = File.ReadAllBytes(path); Assert.Throws<InvalidDataException>(() => new ScanStore(path)); Assert.Equal(before, File.ReadAllBytes(path));
     }
+    [Theory] [InlineData(0)] [InlineData(1)]
+    public void UnrelatedDatabaseIsRejectedBeforeAnySchemaOrJournalChanges(int version)
+    {
+        using var f = new Fixture(); string path = Path.Combine(f.Root, "scan.db");
+        using (var connection = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={path};Pooling=False"))
+        {
+            connection.Open(); using var command = connection.CreateCommand(); command.CommandText = $"PRAGMA user_version={version}; CREATE TABLE personal(value TEXT); INSERT INTO personal VALUES('must survive');"; command.ExecuteNonQuery();
+        }
+        byte[] before = File.ReadAllBytes(path); Assert.Throws<InvalidDataException>(() => new ScanStore(path)); Assert.Equal(before, File.ReadAllBytes(path));
+        Assert.False(File.Exists(path + "-wal"));
+    }
     [Fact] public void DuplicateDeletionKeepsVerifiedOtherCopy()
     {
         using var f = new Fixture(); var keeper = f.Write("keeper.txt", "identical"); var remove = f.Write("remove.txt", "identical");

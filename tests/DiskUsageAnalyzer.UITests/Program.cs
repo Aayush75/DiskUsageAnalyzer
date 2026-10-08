@@ -20,9 +20,9 @@ internal static class Program
     {
         try
         {
-            if (args.Length == 3 && args[0] == "--installer")
+            if (args.Length > 0 && args[0] == "--installer" && (args.Length == 3 || args.Length == 5 && args[3] == "--resume"))
             {
-                InstallerSmoke.Run(Path.GetFullPath(args[1]), Path.GetFullPath(args[2]), SmokePackaged);
+                InstallerSmoke.Run(Path.GetFullPath(args[1]), Path.GetFullPath(args[2]), SmokePackaged, args.Length == 5 ? Path.GetFullPath(args[4]) : null);
                 return 0;
             }
             string artifacts = Path.GetFullPath(args.FirstOrDefault() ?? "artifacts/ui"); Directory.CreateDirectory(artifacts);

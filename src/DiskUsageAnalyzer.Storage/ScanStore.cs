@@ -8,17 +8,31 @@ public sealed class ScanStore : IDisposable
 {
     private readonly SqliteConnection _db;
     private readonly object _sync = new();
+    private const int ApplicationId = 0x44555341; // DUSA: never adopt an unrelated database.
     public string DatabasePath { get; }
     public ScanStore(string path)
     {
         DatabasePath = path;
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
-        _db = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = path, Pooling = false }.ToString());
-        _db.Open();
-        var version = Convert.ToInt64(Scalar("PRAGMA user_version;"));
-        if (version > 1) { _db.Dispose(); throw new InvalidDataException("This database needs a newer application. It has not been modified."); }
-        Execute("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA cache_size=-8192; PRAGMA busy_timeout=5000;");
-        Execute("""
+        bool existing = File.Exists(path);
+        _db = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = path, Pooling = false, Mode = existing ? SqliteOpenMode.ReadOnly : SqliteOpenMode.ReadWriteCreate }.ToString());
+        try
+        {
+            _db.Open();
+            var version = Convert.ToInt64(Scalar("PRAGMA user_version;"));
+            if (version > 1) throw new InvalidDataException("This database needs a newer application. It has not been modified.");
+            if (existing)
+            {
+                if (Convert.ToInt64(Scalar("PRAGMA application_id;")) != ApplicationId)
+                    throw new InvalidDataException("The selected data folder contains an unrecognized scan.db. It has not been modified. Choose a new empty data folder; preserve existing recovery/history files.");
+                _db.Dispose();
+                _db = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = path, Pooling = false, Mode = SqliteOpenMode.ReadWrite }.ToString());
+                _db.Open();
+                if (Convert.ToInt64(Scalar("PRAGMA application_id;")) != ApplicationId || Convert.ToInt64(Scalar("PRAGMA user_version;")) > 1)
+                    throw new InvalidDataException("The database changed while opening. It has not been adopted; choose a new empty data folder.");
+            }
+            Execute("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA cache_size=-8192; PRAGMA busy_timeout=5000;");
+            Execute("""
             CREATE TABLE IF NOT EXISTS files(id INTEGER PRIMARY KEY,parent INTEGER,path TEXT NOT NULL,name TEXT NOT NULL,dir INTEGER,bytes INTEGER,allocated INTEGER,identity TEXT,exclusion TEXT,rule TEXT,explanation TEXT,risk INTEGER,count INTEGER DEFAULT 0);
             CREATE INDEX IF NOT EXISTS ix_parent ON files(parent,bytes DESC);
             CREATE INDEX IF NOT EXISTS ix_size ON files(dir,bytes DESC);
@@ -28,7 +42,10 @@ public sealed class ScanStore : IDisposable
             CREATE TABLE IF NOT EXISTS history(id INTEGER PRIMARY KEY,operation TEXT,original TEXT,recovery TEXT,identity TEXT,status TEXT,detail TEXT,time TEXT);
             CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY,value TEXT);
             PRAGMA user_version=1;
+            PRAGMA application_id=1146442561;
             """);
+        }
+        catch { _db.Dispose(); throw; }
     }
 
     private object? Scalar(string sql) { using var c = _db.CreateCommand(); c.CommandText = sql; return c.ExecuteScalar(); }
