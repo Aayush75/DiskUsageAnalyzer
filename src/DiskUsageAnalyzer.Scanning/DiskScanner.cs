@@ -53,7 +53,7 @@ public sealed class DiskScanner(ScanStore store, IFileMetadata metadata)
                             catch (IOException) { exclusion = "Metadata inaccessible; cleanup disabled."; }
                             long length = identity?.Length ?? ((FileInfo)info).Length;
                             bytes = checked(bytes + length); files++;
-                            batch.Add(new(id, dir.Id, full, info.Name, false, length, identity?.Allocated, identity, exclusion));
+                            batch.Add(new(id, dir.Id, full, info.Name, false, length, identity?.Links == 1 ? identity.Allocated : null, identity, exclusion));
                             var ext = Path.GetExtension(info.Name).ToLowerInvariant(); if (ext.Length == 0) ext = "(no extension)";
                             if (types.Count >= 512 && !types.ContainsKey(ext)) ext = "(other types)";
                             types.TryGetValue(ext, out var total); types[ext] = (checked(total.Bytes + length), total.Count + 1);

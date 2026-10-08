@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using System.Security.Cryptography;
+using System.Diagnostics;
 using DiskUsageAnalyzer.Core;
 using DiskUsageAnalyzer.Storage;
 
@@ -10,6 +11,7 @@ public sealed class DuplicateFinder(ScanStore store, IFileMetadata metadata)
     public IReadOnlyList<DuplicateGroup> Find(IProgress<string>? progress = null, CancellationToken cancellation = default)
     {
         List<DuplicateGroup> result = [];
+        var throttle = Stopwatch.StartNew();
         foreach (var size in store.DuplicateSizes())
         {
             cancellation.ThrowIfCancellationRequested();
@@ -17,7 +19,8 @@ public sealed class DuplicateFinder(ScanStore store, IFileMetadata metadata)
             // Bound a pathological group. UI discloses limits; no automatic delete selection.
             foreach (var file in store.EligibleBySize(size, limit: 2000))
             {
-                cancellation.ThrowIfCancellationRequested(); progress?.Report(file.Path);
+                cancellation.ThrowIfCancellationRequested();
+                if (throttle.ElapsedMilliseconds >= 150) { progress?.Report(file.Path); throttle.Restart(); }
                 try
                 {
                     if (file.Identity is null || metadata.Read(file.Path) != file.Identity || metadata.Exclusion(file.Path, file.Identity) is not null) continue;

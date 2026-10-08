@@ -184,5 +184,14 @@ public sealed class ScanStore : IDisposable
             return entries;
         }
     }
+    public HistoryEntry? HistoryById(long id)
+    {
+        lock (_sync)
+        {
+            using var c = _db.CreateCommand(); c.CommandText = "SELECT * FROM history WHERE id=$id"; c.Parameters.AddWithValue("$id", id);
+            using var r = c.ExecuteReader();
+            return r.Read() ? new(r.GetInt64(0), r.GetString(1), r.GetString(2), r.IsDBNull(3) ? null : r.GetString(3), JsonSerializer.Deserialize<FileIdentity>(r.GetString(4))!, r.GetString(5), r.GetString(6), DateTimeOffset.Parse(r.GetString(7))) : null;
+        }
+    }
     public void Dispose() { lock (_sync) _db.Dispose(); }
 }

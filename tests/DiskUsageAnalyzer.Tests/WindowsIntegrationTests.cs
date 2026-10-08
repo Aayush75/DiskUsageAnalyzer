@@ -4,6 +4,8 @@ using DiskUsageAnalyzer.Core;
 using DiskUsageAnalyzer.Scanning;
 using DiskUsageAnalyzer.Storage;
 using DiskUsageAnalyzer.Windows;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
 
 namespace DiskUsageAnalyzer.Tests;
 
@@ -26,6 +28,74 @@ public sealed class Fixture : IDisposable
 
 public sealed class WindowsIntegrationTests
 {
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern bool CreateHardLinkW(string link, string original, IntPtr security);
+
+    [Fact] public void HardlinksAreScanOnlyAndAllocationIsUnknown()
+    {
+        using var f = new Fixture(); var a = f.Write("a.txt"); var b = Path.Combine(f.Root, "b.txt");
+        Assert.True(CreateHardLinkW(b, a, IntPtr.Zero)); new DiskScanner(f.Store, f.Metadata).Scan(f.Root);
+        var row = f.Store.Largest().Single(x => x.Path == a); Assert.Contains("Hardlinked", row.Exclusion); Assert.Null(row.Allocated);
+        Assert.Throws<ArgumentException>(() => new CleanupManifest([f.Entry(a)], DeleteMode.Permanent)); Assert.True(File.Exists(b));
+    }
+    [Fact] public void JunctionsAreNeverTraversedOrCleanedUp()
+    {
+        using var f = new Fixture(); string outside = f.Root + "-outside"; Directory.CreateDirectory(outside); string sentinel = Path.Combine(outside, "sentinel.txt"); File.WriteAllText(sentinel, "outside untouched");
+        string link = Path.Combine(f.Root, "link");
+        var start = new ProcessStartInfo("cmd.exe") { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
+        start.ArgumentList.Add("/c"); start.ArgumentList.Add("mklink"); start.ArgumentList.Add("/J"); start.ArgumentList.Add(link); start.ArgumentList.Add(outside);
+        using var process = Process.Start(start)!; process.WaitForExit(); Assert.Equal(0, process.ExitCode);
+        var summary = new DiskScanner(f.Store, f.Metadata).Scan(f.Root); Assert.True(summary.Skipped >= 1); Assert.DoesNotContain(f.Store.Largest(), e => e.Path.Contains("sentinel"));
+        Assert.Throws<IOException>(() => new AncestorGuard(Path.Combine(link, "sentinel.txt"))); Assert.Equal("outside untouched", File.ReadAllText(sentinel));
+    }
+    [Fact] public void LongUnicodePathsScanAndDeleteOnlyWithApproval()
+    {
+        using var f = new Fixture(); var relative = Path.Combine(string.Join(Path.DirectorySeparatorChar, Enumerable.Repeat(new string('a', 60), 5)), "空间-δ.txt");
+        var path = f.Write(relative, "unicode"); new DiskScanner(f.Store, f.Metadata).Scan(f.Root); Assert.Contains(f.Store.Largest(), e => e.Path == path);
+        Assert.Equal(OutcomeStatus.Deleted, f.Execute(f.Entry(path), DeleteMode.Permanent).Status); Assert.False(File.Exists(path));
+    }
+    [Fact] public void ReadonlyFilesAreProtectedWithoutChangingPermissions()
+    {
+        using var f = new Fixture(); var path = f.Write("readonly.txt"); File.SetAttributes(path, FileAttributes.ReadOnly);
+        Assert.Equal(OutcomeStatus.Skipped, f.Execute(f.Entry(path), DeleteMode.Permanent).Status); Assert.True(File.Exists(path)); Assert.True(File.GetAttributes(path).HasFlag(FileAttributes.ReadOnly));
+    }
+    [Fact] public void NewFilesAfterReviewAreNotIncluded()
+    {
+        using var f = new Fixture(); var reviewed = f.Write("folder/old.txt"); var entry = f.Entry(reviewed); var newFile = f.Write("folder/new.txt", "new content");
+        Assert.Equal(OutcomeStatus.Deleted, f.Execute(entry, DeleteMode.Permanent).Status); Assert.Equal("new content", File.ReadAllText(newFile)); Assert.True(Directory.Exists(Path.GetDirectoryName(newFile)));
+    }
+    [Fact] public void InterruptedHistoryIsNeverAutomaticallyReplayed()
+    {
+        using var f = new Fixture(); var path = f.Write("sentinel.txt"); f.Store.Journal("Permanent delete", f.Entry(path), null);
+        using var reopened = new ScanStore(f.Store.DatabasePath); Assert.Equal("Pending", Assert.Single(reopened.History()).Status); Assert.True(File.Exists(path));
+    }
+    [Fact] public void DuplicateDeletionKeepsVerifiedOtherCopy()
+    {
+        using var f = new Fixture(); var keeper = f.Write("keeper.txt", "identical"); var remove = f.Write("remove.txt", "identical");
+        var entry = f.Entry(remove) with { Keeper = keeper, KeeperIdentity = f.Metadata.Read(keeper) };
+        Assert.Equal(OutcomeStatus.Deleted, f.Execute(entry, DeleteMode.Permanent).Status); Assert.Equal("identical", File.ReadAllText(keeper));
+    }
+    [Fact] public void NonDuplicateKeeperBlocksRemovalEvenWithMatchingMetadataShape()
+    {
+        using var f = new Fixture(); var keeper = f.Write("keeper.txt", "ABCDEFGH"); var remove = f.Write("remove.txt", "12345678");
+        var entry = f.Entry(remove) with { Keeper = keeper, KeeperIdentity = f.Metadata.Read(keeper) };
+        Assert.Equal(OutcomeStatus.Skipped, f.Execute(entry, DeleteMode.Permanent).Status); Assert.True(File.Exists(remove));
+    }
+    [Fact] public void RecoveredFilesNeedNewValidPermanentApproval()
+    {
+        using var f = new Fixture(); var original = f.Write("a.txt"); var outcome = f.Execute(f.Entry(original)); Assert.Equal(OutcomeStatus.Recovered, outcome.Status);
+        var history = Assert.Single(f.Store.History()); var entry = new ManifestEntry(outcome.RecoveryPath!, history.Identity, "Approved recovered copy", RecoveryHistoryId: history.Id);
+        var gate = new ConsentGate(); var executor = new CleanupExecutor(gate, new WindowsCleanupBackend(f.Store, f.Metadata)); var manifest = new CleanupManifest([entry], DeleteMode.Permanent);
+        Assert.Throws<InvalidOperationException>(() => executor.Execute(manifest, null)); Assert.True(File.Exists(outcome.RecoveryPath));
+        Assert.Equal(OutcomeStatus.Deleted, executor.Execute(manifest, gate.Confirm(manifest, true, true))[0].Status); Assert.False(File.Exists(outcome.RecoveryPath));
+        Assert.All(f.Store.History(), h => Assert.False(h.CanRestore));
+    }
+    [Fact] public void FakeRecoveryHistoryCannotBypassProtectedPathPolicy()
+    {
+        using var f = new Fixture(); var path = f.Write(Path.Combine(PathPolicy.RecoveryDirectory, "unowned.txt"));
+        var entry = f.Entry(path) with { RecoveryHistoryId = 999 };
+        Assert.Equal(OutcomeStatus.Skipped, f.Execute(entry, DeleteMode.Permanent).Status); Assert.True(File.Exists(path));
+    }
     [Fact] public void NativeRenameRetainsFileContent()
     {
         using var f = new Fixture(); var original = f.Write("original.txt", "rename content"); var target = Path.Combine(f.Root, "renamed.txt");

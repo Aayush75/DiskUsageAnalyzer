@@ -1,0 +1,113 @@
+<Window x:Class="DiskUsageAnalyzer.App.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:local="clr-namespace:DiskUsageAnalyzer.App"
+        Title="DiskUsageAnalyzer" Width="1380" Height="900" MinWidth="1024" MinHeight="720" WindowStartupLocation="CenterScreen" Background="{DynamicResource BackgroundBrush}" Foreground="{DynamicResource TextBrush}" FontFamily="Segoe UI" FontSize="13">
+  <Grid Background="{DynamicResource BackgroundBrush}">
+    <Grid.ColumnDefinitions><ColumnDefinition Width="210" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+    <Border Background="{DynamicResource SidebarBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,1,0">
+      <DockPanel Margin="18,24">
+        <StackPanel DockPanel.Dock="Top" Margin="8,0,0,30">
+          <Border Width="38" Height="38" HorizontalAlignment="Left" CornerRadius="10" Background="{DynamicResource AccentBrush}" Margin="0,0,0,14"><TextBlock Text="◫" Foreground="{DynamicResource AccentTextBrush}" FontSize="25" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
+          <TextBlock Text="DiskUsage" FontSize="23" FontWeight="Bold" /><TextBlock Text="ANALYZER" FontSize="10" Foreground="{DynamicResource MutedBrush}" Margin="1,5,0,0" />
+        </StackPanel>
+        <StackPanel DockPanel.Dock="Bottom" Margin="8,24,8,0">
+          <CheckBox Content="Light theme" IsChecked="{Binding LightTheme}" Margin="0,0,0,18" AutomationProperties.Name="Light theme" />
+          <Border Background="{DynamicResource CardBrush}" CornerRadius="8" Padding="12"><StackPanel><TextBlock Text="●  Local &amp; private" Foreground="{DynamicResource SuccessBrush}" FontWeight="SemiBold" /><TextBlock Text="No account. No telemetry.&#x0a;You decide what goes." Style="{StaticResource Muted}" FontSize="11" Margin="0,8,0,0" /></StackPanel></Border>
+          <TextBlock Text="v0.1 · Windows edition" Style="{StaticResource Muted}" FontSize="10" Margin="0,18,0,0" />
+        </StackPanel>
+        <ListBox SelectedIndex="{Binding Section}" IsEnabled="{Binding Idle}" AutomationProperties.Name="Main navigation">
+          <ListBoxItem><TextBlock Text="◉   Overview" Margin="4,5" /></ListBoxItem>
+          <ListBoxItem><TextBlock Text="▦   Explore storage" Margin="4,5" /></ListBoxItem>
+          <ListBoxItem><TextBlock Text="✦   Cleanup findings" Margin="4,5" /></ListBoxItem>
+          <ListBoxItem><StackPanel Orientation="Horizontal" Margin="4,5"><TextBlock Text="☷   Review queue" /><TextBlock Text="{Binding Review.Count, StringFormat='  ({0})'}" Foreground="{DynamicResource AccentBrush}" /></StackPanel></ListBoxItem>
+          <ListBoxItem><TextBlock Text="▥   Duplicate files" Margin="4,5" /></ListBoxItem>
+          <ListBoxItem><TextBlock Text="↶   History &amp; recovery" Margin="4,5" /></ListBoxItem>
+        </ListBox>
+      </DockPanel>
+    </Border>
+    <Grid Grid.Column="1" Margin="28,24,28,16">
+      <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+      <StackPanel Margin="0,0,0,20"><TextBlock Text="YOUR STORAGE, UNDERSTOOD" FontSize="10" Foreground="{DynamicResource AccentBrush}" FontWeight="SemiBold" /><TextBlock Text="{Binding SectionTitle}" FontSize="30" FontWeight="SemiBold" Margin="0,7,0,7" /><TextBlock Text="{Binding SectionDescription}" Style="{StaticResource Muted}" /></StackPanel>
+      <Grid Grid.Row="1" Margin="0,0,0,18">
+        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+        <TextBox Text="{Binding ScanPath, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding Idle}" AutomationProperties.AutomationId="ScanPath" AutomationProperties.Name="Folder or drive to scan" ToolTip="Choose a local folder or a drive, for example C:\" />
+        <Button Grid.Column="1" Content="Browse…" Command="{Binding BrowseCommand}" Margin="8,0,0,0" />
+        <ComboBox Grid.Column="2" ItemsSource="{Binding Drives}" SelectionChanged="OnDriveChanged" Width="65" Margin="8,0,0,0" IsEnabled="{Binding Idle}" AutomationProperties.Name="Local drive" ToolTip="Choose a drive" />
+        <Button Grid.Column="3" Content="Scan storage" Style="{StaticResource Primary}" Command="{Binding ScanCommand}" Margin="8,0,0,0" AutomationProperties.AutomationId="ScanButton" />
+        <Button Grid.Column="4" Content="Stop" Command="{Binding CancelCommand}" Margin="8,0,0,0" />
+      </Grid>
+      <UniformGrid Grid.Row="2" Columns="4" Margin="0,0,0,20">
+        <Border Style="{StaticResource Card}" Margin="0,0,10,0"><StackPanel><TextBlock Text="SCANNED LOGICAL SIZE" Style="{StaticResource Muted}" FontSize="10" /><TextBlock Text="{Binding Total}" FontSize="27" FontWeight="SemiBold" Margin="0,8,0,0" /></StackPanel></Border>
+        <Border Style="{StaticResource Card}" Margin="0,0,10,0"><StackPanel><TextBlock Text="FILES DISCOVERED" Style="{StaticResource Muted}" FontSize="10" /><TextBlock Text="{Binding FileCount}" FontSize="27" FontWeight="SemiBold" Margin="0,8,0,0" /></StackPanel></Border>
+        <Border Style="{StaticResource Card}" Margin="0,0,10,0"><StackPanel><TextBlock Text="VOLUME FREE SPACE" Style="{StaticResource Muted}" FontSize="10" /><TextBlock Text="{Binding FreeSpace}" FontSize="27" FontWeight="SemiBold" Margin="0,8,0,0" Foreground="{DynamicResource SuccessBrush}" /></StackPanel></Border>
+        <Border Style="{StaticResource Card}"><StackPanel><TextBlock Text="SCAN COVERAGE" Style="{StaticResource Muted}" FontSize="10" /><TextBlock Text="{Binding Coverage}" FontSize="21" FontWeight="SemiBold" Margin="0,11,0,0" /></StackPanel></Border>
+      </UniformGrid>
+      <Grid Grid.Row="3">
+        <!-- Overview -->
+        <Grid Visibility="{Binding ShowOverview, Converter={StaticResource BoolVisibility}}">
+          <Grid.ColumnDefinitions><ColumnDefinition Width="1.3*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+          <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+          <Border Style="{StaticResource Card}" Margin="0,0,16,16" Padding="24"><StackPanel>
+            <TextBlock Text="Know what fills your disk." FontSize="23" FontWeight="SemiBold" />
+            <TextBlock Text="Start with a folder or drive above. Then explore the largest files, inspect cleanup findings, or compare duplicate contents." Style="{StaticResource Muted}" Margin="0,12,0,20" />
+            <WrapPanel><Button Content="Explore largest files  →" Command="{Binding LargestCommand}" Style="{StaticResource Primary}" Margin="0,0,8,8" /><Button Content="Review findings" Command="{Binding NavigateCommand}" CommandParameter="2" Margin="0,0,0,8" /></WrapPanel>
+          </StackPanel></Border>
+          <Border Grid.Column="1" Style="{StaticResource Card}" Margin="0,0,0,16" Padding="24"><StackPanel>
+            <TextBlock Text="Your approval comes first." FontSize="19" FontWeight="SemiBold" Foreground="{DynamicResource SuccessBrush}" />
+            <TextBlock Text="Every deletion has an exact preview and an ‘Are you sure?’ confirmation. Recovery mode keeps a local copy; permanent deletion is a separate choice." Style="{StaticResource Muted}" Margin="0,12,0,0" />
+          </StackPanel></Border>
+          <Border Grid.Row="1" Style="{StaticResource Card}" Margin="0,0,16,0"><DockPanel>
+            <TextBlock DockPanel.Dock="Top" Text="Storage map" FontSize="17" FontWeight="SemiBold" Margin="0,0,0,8" />
+            <TextBlock DockPanel.Dock="Bottom" Text="Rectangle area shows logical size. Click to inspect; double-click a folder to explore." Style="{StaticResource Muted}" FontSize="11" Margin="0,10,0,0" />
+            <local:Treemap Items="{Binding MapItems}" SelectedItem="{Binding Selected, Mode=TwoWay}" AutomationProperties.Name="Storage treemap; use Explore list for keyboard access" />
+          </DockPanel></Border>
+          <Border Grid.Row="1" Grid.Column="1" Style="{StaticResource Card}"><DockPanel>
+            <TextBlock DockPanel.Dock="Top" Text="By file type" FontSize="17" FontWeight="SemiBold" Margin="0,0,0,14" />
+            <ScrollViewer VerticalScrollBarVisibility="Auto"><ItemsControl ItemsSource="{Binding FileTypes}"><ItemsControl.ItemTemplate><DataTemplate><StackPanel Margin="0,0,0,15"><DockPanel><TextBlock Text="{Binding Size}" DockPanel.Dock="Right" /><TextBlock Text="{Binding Extension}" Foreground="{DynamicResource AccentBrush}" /></DockPanel><ProgressBar Value="{Binding Percent}" Maximum="100" Height="5" Margin="0,7,0,0" /></StackPanel></DataTemplate></ItemsControl.ItemTemplate></ItemsControl></ScrollViewer>
+          </DockPanel></Border>
+        </Grid>
+        <!-- Exploration, findings, and duplicates share the accessible file list. -->
+        <Grid Visibility="{Binding ShowFiles, Converter={StaticResource BoolVisibility}}">
+          <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+          <Border Visibility="{Binding ShowFindings, Converter={StaticResource BoolVisibility}}" Style="{StaticResource Card}" Margin="0,0,0,12" Padding="10" MaxHeight="160"><ListBox ItemsSource="{Binding Findings}" SelectedItem="{Binding SelectedFinding}" AutomationProperties.Name="Cleanup findings"><ListBox.ItemTemplate><DataTemplate><DockPanel><TextBlock Text="{Binding Size}" DockPanel.Dock="Right" FontWeight="SemiBold" Margin="18,0,6,0" /><StackPanel><TextBlock Text="{Binding Title}" FontWeight="SemiBold" /><TextBlock Text="{Binding Consequence}" Style="{StaticResource Muted}" FontSize="11" Margin="0,4,0,0" /><TextBlock Text="{Binding RiskLabel}" Foreground="{DynamicResource AccentBrush}" FontSize="11" Margin="0,4,0,0" /></StackPanel></DockPanel></DataTemplate></ListBox.ItemTemplate></ListBox></Border>
+          <Border Visibility="{Binding ShowDuplicates, Converter={StaticResource BoolVisibility}}" Style="{StaticResource Card}" Margin="0,0,0,12" Padding="12"><Grid>
+            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+            <StackPanel Margin="0,0,18,0" Width="180"><Button Content="Compare file contents" Command="{Binding DuplicatesCommand}" /><TextBlock Text="Reads local file contents.&#x0a;Cloud and linked files excluded." Style="{StaticResource Muted}" FontSize="11" Margin="0,8,0,0" /></StackPanel>
+            <ListBox Grid.Column="1" MaxHeight="100" ItemsSource="{Binding DuplicateGroups}" SelectedItem="{Binding SelectedGroup}" AutomationProperties.Name="Duplicate groups"><ListBox.ItemTemplate><DataTemplate><TextBlock><Run Text="{Binding Files.Length}" /><Run Text=" copies · " /><Run Text="{Binding Size}" /><Run Text=" repeated" /></TextBlock></DataTemplate></ListBox.ItemTemplate></ListBox>
+            <StackPanel Grid.Column="2" Margin="16,0,0,0"><TextBlock Text="Copy to KEEP" Foreground="{DynamicResource SuccessBrush}" Margin="0,0,0,8" /><ComboBox ItemsSource="{Binding KeeperChoices}" SelectedItem="{Binding Keeper}" DisplayMemberPath="Path" AutomationProperties.Name="Duplicate keeper" /><TextBlock Text="Select another copy below to add to review." Style="{StaticResource Muted}" FontSize="11" Margin="0,8,0,0" /></StackPanel>
+          </Grid></Border>
+          <Grid Grid.Row="1"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="260" /></Grid.ColumnDefinitions>
+            <Border Style="{StaticResource Card}" Padding="0" Margin="0,0,14,0"><DockPanel>
+              <Grid DockPanel.Dock="Top" Margin="12"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions><Button Content="↑ Up" Command="{Binding UpCommand}" /><Button Grid.Column="1" Content="Largest files" Command="{Binding LargestCommand}" Margin="8,0" /><TextBox Grid.Column="2" Text="{Binding Filter, UpdateSourceTrigger=PropertyChanged, Delay=250}" AutomationProperties.Name="Filter by name or path" ToolTip="Filter by name or path" /></Grid>
+              <TextBlock DockPanel.Dock="Top" Text="{Binding Scope}" TextTrimming="CharacterEllipsis" Foreground="{DynamicResource MutedBrush}" Margin="14,0,14,10" />
+              <DockPanel DockPanel.Dock="Bottom" Margin="12"><StackPanel Orientation="Horizontal" DockPanel.Dock="Right"><Button Content="‹" Command="{Binding PreviousPageCommand}" AutomationProperties.Name="Previous page" Margin="0,0,6,0" /><Button Content="›" Command="{Binding NextPageCommand}" AutomationProperties.Name="Next page" /></StackPanel><TextBlock Text="{Binding PageLabel}" VerticalAlignment="Center" Style="{StaticResource Muted}" /></DockPanel>
+              <DataGrid ItemsSource="{Binding Rows}" SelectedItem="{Binding Selected}" MouseDoubleClick="OnFileDoubleClick" AutomationProperties.AutomationId="FilesGrid" AutomationProperties.Name="Files and folders"><DataGrid.Columns>
+                <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="*" /><DataGridTextColumn Header="Logical size" Binding="{Binding Size}" Width="110" /><DataGridTextColumn Header="On disk" Binding="{Binding AllocatedSize}" Width="100" /><DataGridTextColumn Header="Type" Binding="{Binding Kind}" Width="80" />
+              </DataGrid.Columns></DataGrid>
+            </DockPanel></Border>
+            <Border Grid.Column="1" Style="{StaticResource Card}" Padding="16"><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel>
+              <TextBlock Text="INSPECT" Foreground="{DynamicResource AccentBrush}" FontSize="10" FontWeight="SemiBold" /><TextBlock Text="{Binding Selected.Name, TargetNullValue='Nothing selected'}" FontSize="18" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,12,0,12" />
+              <TextBlock Text="{Binding Selected.Path}" Style="{StaticResource Muted}" FontSize="11" Margin="0,0,0,16" />
+              <TextBlock Text="{Binding Selected.RiskLabel}" Foreground="{DynamicResource SuccessBrush}" FontWeight="SemiBold" TextWrapping="Wrap" />
+              <TextBlock Text="{Binding SelectedDescription}" Style="{StaticResource Muted}" Margin="0,10,0,18" />
+              <Button Content="Add to review" Command="{Binding AddSelectedCommand}" Style="{StaticResource Primary}" AutomationProperties.AutomationId="AddReviewButton" Margin="0,0,0,8" />
+              <Button Content="Open folder" Command="{Binding OpenFolderCommand}" Margin="0,0,0,8" /><Button Content="Show in Explorer" Command="{Binding RevealCommand}" Margin="0,0,0,8" /><Button Content="Export CSV report" Command="{Binding ExportCommand}" />
+              <TextBlock Text="Selection is not approval. Deletion always requires a separate confirmation." Style="{StaticResource Muted}" FontSize="11" Margin="0,18,0,0" />
+            </StackPanel></ScrollViewer></Border>
+          </Grid>
+        </Grid>
+        <!-- Review queue -->
+        <Border Style="{StaticResource Card}" Padding="16" Visibility="{Binding ShowReview, Converter={StaticResource BoolVisibility}}"><DockPanel>
+          <StackPanel DockPanel.Dock="Top" Margin="0,0,0,14"><TextBlock Text="{Binding ReviewSummary}" FontSize="20" FontWeight="SemiBold" /><TextBlock Text="Inspect every path. Changed, locked, or unsupported files are skipped at execution." Style="{StaticResource Muted}" Margin="0,8,0,0" /></StackPanel>
+          <StackPanel DockPanel.Dock="Bottom" Margin="0,16,0,0"><CheckBox Content="Permanently delete instead of moving to recovery" IsChecked="{Binding Permanent}" IsEnabled="{Binding Idle}" Foreground="{DynamicResource DangerBrush}" AutomationProperties.AutomationId="PermanentMode" /><TextBlock Text="{Binding DeleteModeDescription}" Style="{StaticResource Muted}" Margin="0,8,0,14" /><DockPanel><Button DockPanel.Dock="Right" Content="Delete selected…" Command="{Binding DeleteCommand}" Style="{StaticResource Danger}" AutomationProperties.AutomationId="DeleteSelectedButton" /><StackPanel Orientation="Horizontal"><Button Content="Remove selection" Command="{Binding RemoveReviewCommand}" Margin="0,0,8,0" /><Button Content="Clear review queue" Command="{Binding ClearReviewCommand}" /></StackPanel></DockPanel></StackPanel>
+          <DataGrid ItemsSource="{Binding Review}" SelectedItem="{Binding SelectedReview}" AutomationProperties.AutomationId="ReviewGrid" AutomationProperties.Name="Exact files proposed for deletion"><DataGrid.Columns><DataGridTextColumn Header="Full path" Binding="{Binding Path}" Width="*" /><DataGridTextColumn Header="Size" Binding="{Binding Size}" Width="100" /><DataGridTextColumn Header="Risk" Binding="{Binding RiskLabel}" Width="150" /></DataGrid.Columns></DataGrid>
+        </DockPanel></Border>
+        <!-- Recovery history -->
+        <Border Style="{StaticResource Card}" Padding="16" Visibility="{Binding ShowHistory, Converter={StaticResource BoolVisibility}}"><DockPanel>
+          <TextBlock DockPanel.Dock="Top" Text="Recovery retains files on the original volume. Restore never overwrites another file. Pending/Unknown operations require manual inspection." Style="{StaticResource Muted}" Margin="0,0,0,14" />
+          <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="0,14,0,0"><Button Content="Restore selected file…" Command="{Binding RestoreCommand}" AutomationProperties.AutomationId="RestoreButton" Margin="0,0,8,0" /><Button Content="Permanently delete recovered file…" Command="{Binding PurgeRecoveryCommand}" Style="{StaticResource Danger}" AutomationProperties.AutomationId="PurgeRecoveryButton" /></StackPanel>
+          <DataGrid ItemsSource="{Binding History}" SelectedItem="{Binding SelectedHistory}" AutomationProperties.Name="Cleanup history"><DataGrid.Columns><DataGridTextColumn Header="Outcome" Binding="{Binding Status}" Width="100" /><DataGridTextColumn Header="Original path" Binding="{Binding OriginalPath}" Width="*" /><DataGridTextColumn Header="Size" Binding="{Binding Size}" Width="90" /><DataGridTextColumn Header="Details" Binding="{Binding Detail}" Width="2*" /></DataGrid.Columns></DataGrid>
+        </DockPanel></Border>
+      </Grid>
+      <StackPanel Grid.Row="4" Margin="0,16,0,0"><ProgressBar IsIndeterminate="True" Visibility="{Binding Busy, Converter={StaticResource BoolVisibility}}" Margin="0,0,0,8" /><TextBlock Text="{Binding Status}" Foreground="{DynamicResource MutedBrush}" FontSize="12" TextWrapping="Wrap" MaxHeight="50" AutomationProperties.AutomationId="StatusText" AutomationProperties.LiveSetting="Polite" /></StackPanel>
+    </Grid>
+  </Grid>
+</Window>

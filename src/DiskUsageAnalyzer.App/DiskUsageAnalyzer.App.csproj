@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType><UseWPF>true</UseWPF><ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+    <ProjectReference Include="../DiskUsageAnalyzer.Analysis/DiskUsageAnalyzer.Analysis.csproj" />
+    <ProjectReference Include="../DiskUsageAnalyzer.Scanning/DiskUsageAnalyzer.Scanning.csproj" />
+    <ProjectReference Include="../DiskUsageAnalyzer.Cleanup/DiskUsageAnalyzer.Cleanup.csproj" />
+  </ItemGroup>
+</Project>

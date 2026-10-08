@@ -12,11 +12,30 @@ public sealed class WindowsCleanupBackend(ScanStore store, WindowsMetadata metad
 {
     public CleanupOutcome Execute(ManifestEntry entry, DeleteMode mode)
     {
-        if (metadata.Exclusion(entry.Path, entry.Identity) is { } reason) return new(entry.Path, OutcomeStatus.Skipped, reason);
+        CleanupOutcome outcome;
+        try { outcome = ExecuteCore(entry, mode); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        { outcome = new(entry.Path, OutcomeStatus.Failed, ex.Message); }
+        if (outcome.Status is OutcomeStatus.Skipped or OutcomeStatus.Failed)
+        {
+            long id = store.Journal(mode == DeleteMode.Permanent ? "Permanent delete" : "Delete to recovery", entry, null);
+            store.CompleteJournal(id, outcome.Status.ToString(), outcome.Detail);
+        }
+        return outcome;
+    }
+
+    private CleanupOutcome ExecuteCore(ManifestEntry entry, DeleteMode mode)
+    {
+        var recoveryHistory = entry.RecoveryHistoryId is { } historyId ? store.HistoryById(historyId) : null;
+        if (entry.RecoveryHistoryId is not null && (mode != DeleteMode.Permanent || recoveryHistory is not { CanRestore: true }
+            || recoveryHistory.RecoveryPath != entry.Path || recoveryHistory.Identity != entry.Identity))
+            return new(entry.Path, OutcomeStatus.Skipped, "Recovery record is missing, changed, or not eligible. Nothing deleted.");
+        string policyPath = recoveryHistory?.OriginalPath ?? entry.Path;
+        if (metadata.Exclusion(policyPath, entry.Identity) is { } reason) return new(entry.Path, OutcomeStatus.Skipped, reason);
         using var ancestors = new AncestorGuard(entry.Path);
         using var file = NativeFiles.Open(entry.Path, NativeFiles.DeleteAccess | NativeFiles.ReadData | NativeFiles.ReadAttributes, 0);
         var actual = NativeFiles.Identity(file);
-        if (actual != entry.Identity || metadata.Exclusion(entry.Path, actual) is not null || (actual.Attributes & 0x10) != 0)
+        if (actual != entry.Identity || metadata.Exclusion(policyPath, actual) is not null || (actual.Attributes & 0x10) != 0)
             return new(entry.Path, OutcomeStatus.Skipped, "File changed since review, or is not an eligible regular file. Scan again.");
         using var keeperAncestors = entry.Keeper is null ? null : new AncestorGuard(entry.Keeper);
         using var keeper = entry.Keeper is null ? null : NativeFiles.Open(entry.Keeper, NativeFiles.ReadData | NativeFiles.ReadAttributes, NativeFiles.ShareRead);
@@ -27,12 +46,14 @@ public sealed class WindowsCleanupBackend(ScanStore store, WindowsMetadata metad
         }
         if (mode == DeleteMode.Permanent)
         {
-            long journal = store.Journal("Permanent delete", entry, null); // Durable intent before destructive call.
+            long journal = store.Journal(recoveryHistory is null ? "Permanent delete" : "Permanent removal from recovery",
+                recoveryHistory is null ? entry : entry with { Path = recoveryHistory.OriginalPath }, recoveryHistory?.RecoveryPath); // Durable intent before destructive call.
             try
             {
                 NativeFiles.DeleteByHandle(file);
                 file.Dispose(); // Commit disposition before recording success.
                 store.CompleteJournal(journal, "Deleted", "Permanently deleted after explicit confirmation; no built-in undo.");
+                if (recoveryHistory is not null) store.CompleteJournal(recoveryHistory.Id, "Deleted", "Recovered copy permanently removed after a new explicit confirmation.");
                 return new(entry.Path, OutcomeStatus.Deleted, "Permanently deleted. Actual free-space change can vary.");
             }
             catch

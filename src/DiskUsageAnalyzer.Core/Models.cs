@@ -32,7 +32,7 @@ public sealed record DuplicateGroup(string Hash, ImmutableArray<FileEntry> Files
     public string Size => ByteSize.Format(RedundantBytes);
 }
 
-public sealed record ManifestEntry(string Path, FileIdentity Identity, string Reason, string? Keeper = null, FileIdentity? KeeperIdentity = null);
+public sealed record ManifestEntry(string Path, FileIdentity Identity, string Reason, string? Keeper = null, FileIdentity? KeeperIdentity = null, long? RecoveryHistoryId = null);
 
 public sealed class CleanupManifest
 {
